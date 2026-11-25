@@ -1,61 +1,72 @@
-# SnowSakura-FPGA — Active Development State
+# SnowSakura-FPGA — Current Progress
 
-## Status
+## 2026-11-26: Golden GTH IP Frozen
 
-**Active development resumed on 2026-08-14 UTC.**
+**SnowSakura has reached its Golden GTH IP milestone. Scrambled RAW32 is moving through the SFP+ optical laboratory path on ZU15EG, and an HKEX OMD-C laboratory packet has been recovered and decoded. The next objective is a 43 ns-class A/B market-data architecture.**
 
-The preserved SnowSakura-FPGA hardware baseline records a real Puzhi ZU15EG optical laboratory chain, fabric-owned programmed transmission, Raw32 registered reception, bounded alignment, fixed HKEX OMD-C parsing, stateful order updates, 64-bit price-level aggregation, top-of-book selection, coherent snapshot export, implementation timing closure, Post-Implementation Timing Simulation, ILA evidence, and receiver Eye Scan evidence.
+The July GTH Top milestone established the hardware foundation. The November Golden GTH freeze establishes the reusable dual-buffer-bypass IP baseline for HKEX and future CME, LSE and NASDAQ laboratory projects.
 
-The next active stage is an independent dual-line A/B arbitration simulation. It will start from the preserved RX ×3 + Parser ×1 single-line boundary and prove sequence-aware eligibility, duplicate suppression, bounded skew handling, gap/reorder behaviour, reset/flush behaviour, payload conservation, and deterministic cycle latency before any arbitration RTL is attached to the live hardware top. The `10^15`-bit BER and Eye Scan record remains a separate physical measurement task.
+## Active Hardware Baseline
 
-## Preserved hardware identity
-
-| Item | Preserved value |
+| Item | Configuration |
 |---|---|
-| Device | `XCZU15EG-FFVB1156-2-I` |
-| Serial rate | 10.3125 Gb/s |
-| Physical direction | X0Y6/SFP2 TX → 10G-SR → OM4 → SFP1/X0Y7 RX |
-| Receive baseline | GTH Raw Mode, RX Buffer ON |
-| Transmit baseline | TX Buffer Bypass |
-| Golden source | fabric-owned custom Raw32 OMD-C laboratory stream |
-| User-clock class | 322.265625 MHz operating point / 322.56 MHz timing target |
-| Registered fabric pipeline | RX ×3 + Parser ×1 + TX ×1 |
+| Device / tools | `xczu15eg-ffvb1156-2-i`, Vivado 2022.2, GT Wizard 1.7 |
+| Serial interface | 10.3125 Gb/s, RAW32 TX and RX |
+| Optical direction | X0Y6/SFP2 TX → OM4 → X0Y7/SFP1 RX |
+| GT channels / master | X0Y6 and X0Y7; X0Y7 TX/RX master |
+| GT buffers | **TX and RX Buffer Bypass**, RX bypass MULTI |
+| Reference / PLL | 125 MHz MGTREFCLK → QPLL0; 200 MHz freerun |
+| Clock sources | TXPROGDIVCLK / RXOUTCLKPMA |
+| Nominal RAW32 user clock | 322.265625 MHz, ≈ 3.103030 ns |
+| Fabric timing over-constraint | 322.56 MHz |
+| Laboratory source | Scrambled RAW32 HKEX OMD-C frames |
 
-## Preserved evidence
+The Golden GTH recreation Tcl and XCI define the frozen IP configuration. The top, XDC and scrambler are retained with the matching laboratory project.
 
-| Boundary | Result |
+## 43 ns A/B Attack Plan
+
+| Allocation | Budget |
+|---|---:|
+| GTH PMA/PCS and associated physical path | ≈ 18 ns |
+| Existing fabric baseline | 6 cycles ≈ 18.62 ns |
+| Planned additional A/B arbitration | 2 cycles ≈ 6.21 ns |
+| **Integrated wire-to-wire design target** | **≈ 42.82 ns — 43 ns class** |
+
+The six-cycle fabric baseline follows the project's upstream-launch-to-TX-release accounting. The two-cycle allocation is the next A/B integration target; the ≈18 ns GTH allowance is a design budget. Independent hardware timestamping will measure the integrated wire-to-wire result and its latency distribution.
+
+## Completed Milestones
+
+- [x] GTH Top milestone and ZU15EG board bring-up.
+- [x] Golden GTH IP freeze with TX/RX Buffer Bypass.
+- [x] External native PRBS31 short-window board validation in the matching dual-bypass diagnostic build: `ila_checker=0x95`, `good_count=0xFFFFF`, approximately 2^20 RX cycles / 3.25 ms, with no current checker error or error/loss-of-lock sticky.
+- [x] Scrambled RAW32 optical TX, RX capture and short-window laboratory packet decode.
+- [x] RX alignment and framing demonstrated on the laboratory stream.
+- [x] HKEX OMD-C Add Order message-header event demonstrated in captured-stream simulation.
+- [x] Post-route timing and Post-Implementation SDF Timing Simulation for the documented implementations.
+- [x] Earlier RX Buffer ON laboratory build demonstrated OMD-C parsing, order-state processing, price-level aggregation, top-of-book and snapshot export.
+
+## Latest Evidence
+
+| Evidence | Result |
 |---|---|
-| TX ownership | ILA captures frame start, busy state, sequential indices, and complete programmed data |
-| Optical path | real SFP2/X0Y6 TX → OM4 → SFP1/X0Y7 RX |
-| Eye Scan | 77.78% open UI and open area 6720 at configured `1e-10` dwell BER |
-| BERT exercise | current record `10^8` bits; final `10^15`-bit result will be appended after completion |
-| Alignment | stable `align_locked = 1` |
-| Parser | repeated `parsed_valid`, `parsed_error = 0` |
-| Protocol forms | Add, Modify, two-message packet, and Heartbeat packet arithmetic demonstrated |
-| Book state | Order State Delta, 64-bit aggregation, Top-of-Book, versioned snapshot |
-| Implemented timing | WNS `+0.239 ns`, WHS `+0.017 ns`, zero failing endpoints |
-| RX local path | 0 LUT levels, 0.546 ns delay, `+0.379 ns` slack under 0.900 ns |
-| Implemented fabric timing | 12.420 ns across four intervals between five registered boundaries |
+| [Physical implementation and RX timing](img/Snipaste_2026-11-26_04-58-17.png) | RX clock-group setup **+1.223 ns**, hold **+0.012 ns**, pulse-width **+0.564 ns**. Displayed GTH RX → first capture-register path: setup **+1.316 ns**, delay **1.708 ns**, 0 reported logic levels. |
+| [RX-to-parser simulation](img/Snipaste_2026-11-26_05-04-33.png) | Displayed cursor interval **9.320 ns**; `locked=1`, `marker_error=0`, message size `0x0020` and type `0x001E` with parser-valid. |
+| [RX optical ILA](img/Snipaste_2026-11-26_05-45-35.png) | Captures changing RAW32 receive data, normalized output activity and probe flags. |
+| [TX scrambled RAW32 ILA](img/Snipaste_2026-11-26_05-45-46.png) | Captures changing scrambled RAW32 words at the TX probe. |
 
-## Closed chain
+The timing screenshot belongs to the shown fixed-phase implementation. The simulation interval, transceiver allocation and full wire-to-wire latency refer to different measurement boundaries.
 
-~~~text
-Golden fabric TX
-    -> GTH/SFP/OM4/GTH RX
-    -> registered Raw32 capture
-    -> bounded marker/alignment
-    -> 12 x 32-bit packet capture
-    -> fixed Message 0 parser
-    -> Order State Delta
-    -> 64-bit Price-Level Aggregator
-    -> Top-of-Book
-    -> versioned Register Snapshot
-~~~
+## Next Targets
 
-Simulation, synthesis, implementation, post-route timing, bitstream/ILA regression, Post-Implementation Timing Simulation, and Eye Scan are all represented in the final evidence package.
+- [ ] **Line A/B arbitration:** integrate message-level sequence handling, ordering, duplicate suppression, conflict handling and gap/recovery within the two-cycle allocation.
+- [ ] **10GbE NIC replay:** drive market-data stimulus into the FPGA through a separate validation path.
+- [ ] **KU040 hardware timestamping:** build an independent nanosecond timestamp and measurement system.
+- [ ] **Latency distribution:** measure integrated end-to-end P50, P99 and P99.9.
+- [ ] **Long-duration BER:** extend physical-link measurement beyond the completed short-window PRBS31 validation.
+- [ ] Extend the hardware foundation to **CME, LSE and NASDAQ** laboratory projects.
 
-## Active-boundary rule
+## Earlier Hardware Evidence
 
-The completed public build uses a custom Raw32 laboratory source and RX Buffer ON. It is not a production 10GBASE-R HKEX feed, and the separate 36–37 ns RX/TX Double-Bypass architecture is not presented as a measured result.
+The July RX Buffer ON build remains part of SnowSakura's development record. It demonstrated programmed TX, optical reception, bounded alignment, OMD-C parser events, downstream order-state/aggregation/TOB/snapshot processing, an Eye Scan, routed timing and implemented timing simulation. Its reported WNS `+0.239 ns`, WHS `+0.017 ns`, and **12.420 ns across four intervals between five registered boundaries** belong to that implementation.
 
-Active development now proceeds in this repository. The recovery reference is commit `ffe9d0b1f064ff5da0853f5fa18cf714adf60782` dated 2026-07-14 UTC; the active-resumption commit is dated 2026-08-14 UTC. Existing RX Buffer ON results remain evidence only for that measured configuration. The dual-line arbitration simulation must not borrow those results as proof for the RX/TX Double-Bypass path.
+The [evidence chain](EVIDENCE_CHAIN.md) links the July and November captures and identifies their build and measurement boundaries. The [README](README.md) contains the project architecture and full development history.
