@@ -1,118 +1,46 @@
 # SnowSakura-FPGA
 
-## Deterministic Physical-Layer FPGA Architecture for HKEX OMD-C on ZU15EG / VU9P
+## 43 ns A/B Market-Data Architecture — HKEX OMD-C on ZU15EG
 
-SnowSakura-FPGA is a physical-layer FPGA project for HKEX OMD-C market-data ingestion, normalization, fixed-slice parsing, arbitration, and low-latency TX release on Xilinx UltraScale+ devices.
+**2026-11-26: Golden GTH IP frozen. Scrambled RAW32 optical RX/TX running on hardware. The next target: bring A/B arbitration into a 43 ns wire-to-wire budget.**
 
-The project now has **two clearly separated architecture tracks**:
+SnowSakura drives market data through custom FPGA hardware: GTH RAW32, RX normalization, OMD-C parsing, A/B arbitration and TX release. Every cycle is accounted for, from the transceiver to registered logic and physical routing.
 
-| Version | Architecture track | Transceiver mode | Delivery status | Latency target | Meaning |
-|---:|---|---|---|---:|---|
-| **Version 1** | Deterministic Low-Latency Research Blade | **GTH Raw Mode / RX-TX Buffer Bypass** | Research / advanced validation path | **40ns class** | The original extreme latency target. It keeps RX Buffer Bypass and manual alignment as the final deterministic blade, but it requires stricter clocking, phase alignment, post-route proof, and board-level stability evidence before it can be treated as a deliverable. |
-| **Version 2** | Stable Hardware Delivery Baseline | **GTH Raw Mode / RX Buffer ON / TX Buffer Bypass** | Current active deliverable path | **sub-60 ns measured target** | This is not because the RX Buffer Bypass path cannot be built. It is a deliberate engineering delivery decision after ZU15EG bring-up, ILA probing, Eye Scan direction, and receive-path stress testing showed that packet correctness and stable board evidence must come before removing every possible GT latency source. |
+| Platform / performance | Specification |
+|---|---|
+| FPGA | XCZU15EG-FFVB1156-2-I; VU9P physical architecture research |
+| Interface | 10.3125 Gb/s GTH RAW32 |
+| Golden GTH | X0Y6 / X0Y7, RX and TX Buffer Bypass, QPLL0 |
+| Nominal user clock | 322.265625 MHz — 3.103030 ns per cycle |
+| Fabric timing constraint | 322.56 MHz over-constraint |
+| A/B wire-to-wire design target | **approximately 43 ns** |
+| Current milestone | Golden GTH IP freeze and single-path scrambled optical laboratory RX/TX |
+| Next | A/B arbitration, NIC replay and independent hardware latency measurement |
 
-**Current active repository direction:** **Version 2 first, Version 1 continues as the deterministic research blade.**
+### The 43 ns Attack Plan
 
-This means the public repository is no longer presented as a single 36 ns slogan. The current deliverable track is a stable, measurable, hardware-facing **sub-60 ns baseline**, while the original 36–37 ns path remains preserved as the advanced low-latency research target.
+| Budget component | Allocation |
+|---|---:|
+| GTH PMA/PCS and associated physical-path allowance | ~18 ns |
+| Existing fabric baseline | 6 cycles ≈ 18.62 ns |
+| Planned A/B arbitration | 2 cycles ≈ 6.21 ns |
+| **Total design budget** | **≈ 42.82 ns — 43 ns class** |
 
-**Target devices:** Xilinx Zynq UltraScale+ **XCZU15EG FFVB1156** and Virtex UltraScale+ **VU9P**  
-**Primary clock target:** **322.56 MHz** fabric over-constraint / **322.265625 MHz** standard 10.3125G-related reference point  
-**Current delivery transceiver path:** **GTH Raw Mode / RX Buffer ON / TX Buffer Bypass**  
-**Research transceiver path:** **GTH Raw Mode / RX-TX Buffer Bypass**  
-**Current verification focus:** real ZU15EG bring-up, SFP/GTH link stability, pattern checker, fixed OMD-C ROM validation, post-route STA, SDF timing simulation, Eye Scan direction, and BER measurement.
+The six-cycle baseline uses the project's upstream launch-to-TX-release accounting; the extra two cycles are the planned arbitration allocation. The ~18 ns transceiver allowance is a design budget. The 43 ns figure is the integrated architecture target; end-to-end hardware latency and its P99.9 will be measured with the planned independent timestamp system.
 
----
+The single-path architecture has already been through post-implementation SDF timing simulation. The Golden GTH IP is frozen with dual bypass, and a scrambled RAW32 laboratory packet has been recovered through the optical loopback. The next engineering fight is integrating sequence-aware A/B arbitration without giving away the latency budget.
 
-## Current Architecture Snapshot — 2026-07-07
+## Current Architecture
 
-SnowSakura-FPGA is now split into two validation paths.
+**GTH RAW32 → RX capture / normalization / framing → HKEX OMD-C parser → A/B arbitration → TX release.**
 
-### Version 2 — Stable Hardware Delivery Baseline
+The laboratory TX scrambles RAW32 traffic and sends it over SFP+; the RX path recovers packet words and presents a fixed parser interface. Alignment acquisition and packet framing are owned by the RX path. The reusable Golden GTH configuration is the starting point for future CME, LSE and NASDAQ laboratory projects.
 
-This is the active implementation path for the first real ZU15EG hardware deliverable.
-
-| Stage | Physical meaning | Evidence target |
-|---|---|---|
-| GTH RX Buffer ON | Use the RX elastic buffer for receive-path stability and cleaner board-level bring-up | `rx_reset_done`, `link_ready`, clean RX data capture |
-| GTH Raw Mode | Keep the design close to the physical transceiver path instead of hiding the fast path inside a vendor MAC/AXI system | GT Wizard reports, real user clock reports |
-| TX Buffer Bypass | Keep the TX side latency-controlled where it is currently practical and useful | TX reset done, TX pattern output, loopback validation |
-| Buffered RX capture | Capture stable GTH RX output into FDREs in the RX user clock domain | post-route timing and simulation |
-| Pattern checker | Validate stable data movement before parser claims | `pattern_match_sticky` |
-| Fixed OMD-C ROM validation | Feed deterministic OMD-C test frames into the path | board-level reproducibility |
-| Fixed-slice OMD-C parser | Parse fixed offsets only; no runtime barrel shifter in the fast path | post-route STA and SDF timing |
-| Latency report | Do not hide GT latency or buffer latency inside slogans | measured sub-60 ns target |
-
-**Version 2 is not a retreat.** It is the stable delivery architecture selected after real hardware pressure. The receive side was hit by the actual physical problems that do not appear in clean RTL diagrams: clocking setup, RXUSRCLK2 / RXPROGDIVCLK behavior, buffer-bypass status, phase stability, debug visibility, Eye Scan discipline, and board-level receive-path stress.
-
-A live market-data parser cannot be considered successful if a rare receive-boundary instability can drop or corrupt a packet. Therefore Version 2 first proves packet correctness, link stability, and measured latency. Version 1 remains the lower-latency research blade after this baseline is stable.
-
-### Version 1 — Deterministic Low-Latency Research Blade
-
-The original single-channel architecture is preserved as the advanced target path:
-
-| Stage | Budget | Physical meaning |
-|---|---:|---|
-| RX normalization | 3 cycles | Raw/PCS-lite boundary normalization, alignment-owned valid/data handoff, fixed parser interface |
-| Parser extraction | 1 cycle | Fixed-offset OMD-C field extraction; no runtime barrel shifter in steady-state |
-| Arbitration | 2 cycles | Dual-path-ready arbitration budget; sequence/gap/recovery logic separated from RX physical alignment |
-| TX release | 1 cycle | Pre-registered TX template/control release path |
-| PMA latency | ~18 ns model | GTH Raw Mode / Buffer Bypass physical transceiver budget |
-
-Version 1 keeps the original deterministic ambition, but it is now treated correctly: as a research blade that must be proven through clocking, phase alignment, post-route STA, timing simulation, and real hardware measurement before being described as a deliverable.
-
-This replaces the earlier mixed wording around 31.5 ns / 36 ns / 37 ns. The historical logs are preserved below because they show the learning curve and timing evidence progression, but the active public architecture statement is now:
-
-> **Version 2 delivers first. Version 1 continues as the deterministic low-latency research blade.**
-
-The current verification direction is stricter than the earlier README language. I no longer treat slogans such as “zero jitter” as proof. The evidence chain is concrete: **BER measurement, Eye Scan, SFP loopback, post-route timing, SDF timing simulation, and hardware evidence**.
-
----
-
-## What SnowSakura Is
-
-SnowSakura-FPGA is a physical-layer FPGA research and implementation project for ultra-low-latency HKEX OMD-C ingestion. The project focuses on the boundary where protocol parsing, timing closure, transceiver behavior, clocking, and physical routing interact.
-
-This is not a CPU parser, not a kernel-bypass software stack, not a PCIe capture-card project, and not a vendor-MAC/AXI FIFO demonstration.
-
-The design philosophy is to map the fast path directly into FPGA primitives and physical routing resources:
-
-- **FDRE** boundaries for deterministic cycle ownership
-- **LUT6 / LUT5** logic-depth accounting
-- **CARRY8** only where its dedicated carry chain is physically justified
-- **GTH** Raw Mode exploration
-- **RX Buffer ON** for the current stable delivery baseline
-- **RX Buffer Bypass** preserved for the deterministic low-latency research blade
-- **Pblock**, placement, routing locality, and clock-region awareness
-- post-route **STA**, **SDF timing simulation**, and board-level BER/Eye evidence
-
-In this project, Verilog is not treated as abstract software. Every fast-path line must eventually correspond to physical resources: flip-flops, LUT inputs, carry-chain segments, local interconnect, switch matrices, clock trees, and routed nets.
-
----
-
-## Critical Fast-Path Rules
-
-The current SnowSakura fast-path discipline is strict:
-
-1. **No runtime barrel shifter in the steady-state RX path.**  
-   A dynamic `offset +: width` slice maps to a mux/barrel network, not a wire. It is useful in bring-up experiments, but not acceptable in the final fixed-cycle steady-state path.
-
-2. **No 64-way scanner in the final RX path.**  
-   A wide preamble/SFD scanner can be useful for bring-up, but after alignment is locked, the parser must consume a fixed interface.
-
-3. **No Async FIFO in the latency-critical path.**  
-   CDC safety matters, but an elastic FIFO destroys the fixed-cycle fabric budget. The final fast path must be same-domain or phase-related with verified clock interaction.
-
-4. **No unbounded control fanout.**  
-   Parser valid, arbitration select, packet valid, and TX release controls must be replicated or localized when fanout threatens routing delay.
-
-5. **No hidden vendor pipeline in latency claims.**  
-   Vendor MAC, AXI, FIFO, PCS buffering, or GT buffering must be counted explicitly if it is used.
-
-6. **No timing claim without post-route evidence.**  
-   Functional simulation alone is not timing closure. The evidence chain must include WNS/WHS, logic levels, high-fanout nets, clock interaction, route delay, SDF timing simulation, and eventually hardware BER/Eye results.
-
-7. **No confusing delivery baseline with research failure.**  
-   Version 2 uses RX Buffer ON because the first hardware deliverable must be stable, measurable, and packet-correct. Version 1 remains the RX Buffer Bypass research path.
+- RX/TX dual Buffer Bypass and 125 MHz QPLL0 reference.
+- Same-domain payload processing with explicit clock and reset ownership.
+- Fixed-field parsing, bounded control and registered pipeline boundaries.
+- LUT depth, fanout, placement and routing treated as first-class design constraints.
+- RTL simulation, routed STA, SDF timing simulation and on-board ILA evidence.
 
 ---
 
@@ -151,7 +79,7 @@ I am open to serious technical discussion, adversarial review, and collaboration
 
 # Engineering Log
 
-The following log intentionally preserves the original time stamps and image pointers. Earlier sections may contain historical targets or terminology that were later corrected. The most current architecture is the Version 2 / Version 1 split described above.
+The dated entries below record the progression from initial RTL and physical timing research to the completed November optical RX/TX milestone.
 
 ---
 
@@ -183,7 +111,7 @@ Reported metrics from the original implementation log:
 - **WHS:** +0.024 ns
 - **Failing endpoints:** 0
 
-The important engineering point is not the number alone; it is what the number forced me to learn. Setup and hold must both survive after implementation. A path that is only “logically simple” is not accepted until the routed timing report proves it.
+This stage established setup and hold closure through physical implementation and placement locality.
 
 ### Stage 3: Full Pipeline Squeeze @ 322 MHz
 
@@ -224,7 +152,7 @@ Key physical concerns in this phase:
 - whether direct mappings remained local or became routed detours
 - whether debug/demo outputs distorted the fast-path structure
 
-The early README used more aggressive language such as “direct physical mapping” and “zero-latency clock enables.” The corrected interpretation is stricter: a schematic can show topology, but only post-route timing and hardware measurement can prove timing and latency behavior.
+The schematic inspection established the relationship between RTL structure, primitive mapping and routed timing.
 
 ### III. Static Timing Report Summary
 
@@ -235,7 +163,7 @@ Reported metrics preserved from this stage:
 - **WNS:** +0.472 ns
 - **WHS:** +0.030 ns
 
-The useful conclusion from this stage was that the physical path could be constrained into a timing-clean shape under the tested fabric model. It was not yet final board-level proof.
+The tested fabric implementation met its timing constraints.
 
 ### Proprietary Constraint Policy
 
@@ -280,7 +208,7 @@ This reinforced the rule that moderate fanout can become a timing problem when i
 
 ### Manual Placement, Logic Levels, and Latency
 
-The historical README used phrases such as “absolute control,” “Logic Level = 0,” and “surgery on silicon.” The corrected engineering interpretation is:
+Physical implementation priorities:
 
 - A path with **0 reported logic levels** still has route delay, clock uncertainty, setup requirement, and hold requirement.
 - A direct-looking route in Device View must still be verified by `report_timing`.
@@ -293,7 +221,7 @@ The historical README used phrases such as “absolute control,” “Logic Leve
 
 ![new_art](img/yuki_9.png)
 
-These images are preserved as historical physical-layout evidence. The current way to interpret them is not as a standalone proof, but as part of a larger evidence chain: placement view, timing report, route delay, fanout report, and timing simulation.
+Device views from the routing and placement optimization experiments.
 
 ### New Simulation
 
@@ -301,7 +229,7 @@ These images are preserved as historical physical-layout evidence. The current w
 
 ![SIM](img/11sim2_2.png)
 
-Simulation helped expose functional behavior and pipeline timing. The later project direction corrected an important limitation: simulation must distinguish functional parser success from GTH/Raw Mode/CDC physical proof.
+Simulation established functional behavior and pipeline timing before the subsequent GTH hardware experiments.
 
 ---
 
@@ -315,12 +243,12 @@ The early public specification emphasized several aggressive ideas:
 - CARRY8-assisted validation logic
 - fixed-stage deterministic pipeline structure
 
-The corrected current interpretation is stricter:
+Design principles established during these experiments:
 
-- A **sliding window** can be useful for testbench, bring-up, or reference experiments, but a runtime barrel shifter does not belong in the final steady-state RX fast path.
+- Sliding-window experiments informed the fixed parser interface and alignment architecture.
 - A **parallel preamble scanner** is useful during alignment, but it must not remain as a high-fanout steady-state scanner that loads the critical path.
 - **CARRY8** is useful only where its physical carry chain actually reduces delay and where post-route timing confirms it.
-- A deterministic pipeline must be counted in cycles and ns, not described only with slogans.
+- Account for deterministic pipeline latency in cycles and nanoseconds.
 
 ### Hardcore Timing Metrics — Historical Post-Implementation Notes
 
@@ -330,9 +258,7 @@ Preserved metrics from the original log:
 - **WHS:** +0.009 ns
 - **Reported Logic Level:** 0 on selected paths
 
-Correct interpretation:
-
-A 9 ps hold margin is not a marketing trophy; it is a warning that hold timing is flying close to the ground. It is valid only if the implemented timing report, clock uncertainty, min-delay analysis, and endpoint coverage are correct.
+The selected implementation achieved positive setup and hold slack under its reported constraints.
 
 ### Next Python Test
 
@@ -389,9 +315,7 @@ The testbench attempted to model harsher physical-layer conditions than an ideal
 - sub-ns phase perturbation experiments
 - raw-data stream ingestion through the simulation framework
 
-Correct current interpretation:
-
-This was a useful stress simulation, not a replacement for GTH board-level proof. It proved that the parser framework was improving, but the final evidence still requires post-route timing, real transceiver configuration, SFP loopback, Eye Scan, and BER measurement.
+This simulation established a stress-test framework for the subsequent hardware development.
 
 ![Vivado_Sim_2](img/13sim3_2.png)
 
@@ -414,18 +338,17 @@ At this time the remaining loss was treated as the final frontier of the simulat
 
 The original Zero-Detour section focused on direct routing geometry and the desire to eliminate unnecessary detours.
 
-Corrected technical meaning:
+Routing objectives:
 
 - Short Manhattan distance can reduce route delay.
 - Fewer switchbox hops can reduce uncertainty and skew.
-- But route shape must still be validated through implemented timing reports.
-- A clean visual route is not automatically a valid 36–37 ns system proof.
+- Use implemented timing reports to evaluate the resulting physical routes.
 
 ![Vivado_routing1](img/routing1.png)
 
 ![Vivado_routing2](img/routing2.png)
 
-This section is preserved because physical geometry is central to the project. The wording is tightened so that the claim is tied to verifiable implementation evidence rather than visual confidence alone.
+Physical routing geometry remains central to SnowSakura’s latency optimization.
 
 ---
 
@@ -437,14 +360,13 @@ Historical result preserved:
 
 - **10,000 / 10,000** packet ingestion in the test stream
 - no added pipeline cycle in that simulation architecture
-- wire-to-wire budget still framed around the 36 ns-class target
+- retained the low-latency wire-to-wire design objective
 
 ![tcl](img/tclover2.png)
 
 ### Simulation Report — Vivado XSim
 
-The historical note said: “Only 1 logic level.”  
-The corrected interpretation is: selected paths showed very low logic depth in the tested netlist, but final acceptance still requires routed timing, endpoint coverage, high-fanout review, and hardware measurement.
+Selected paths showed one reported logic level in the tested netlist.
 
 ### How the Final Loss Was Removed — Physical-Layer Breakdown
 
@@ -472,11 +394,7 @@ Preserved reported metric from this phase:
 
 As of the May 18 milestone, the single-path parser had reached the first public simulation target under the available test environment.
 
-The corrected current framing is:
-
-- This was a major simulation and post-route learning milestone.
-- It was not the end of validation.
-- The next proof layer is real ZU15EG + SFP hardware validation.
+This completed the initial simulation milestone and established the foundation for ZU15EG + SFP hardware integration.
 
 ---
 
@@ -488,7 +406,7 @@ The next architecture layer must ingest both Line A and Line B, choose the first
 
 ### The 2-Cycle Arbitration Challenge
 
-The dual-path arbitration budget was historically framed as **2 cycles** at 322.56 MHz, or about **6.2 ns**.
+The Line A/B arbitration allocation is **2 cycles**, approximately **6.21 ns** at the nominal 322.265625 MHz RAW32 clock.
 
 Within that physical budget, the design must avoid:
 
@@ -505,56 +423,36 @@ The intended direction is a **chunked replicated one-hot arbiter**:
 - keep `out_valid` / TX release control separate from payload chunk selection
 - verify that replication survives synthesis and implementation
 
-This section remains part of the Version 1 / advanced architecture record. Version 2 focuses first on stable single-lane GTH bring-up, fixed packet validation, and measured sub-60 ns delivery.
+This arbitration architecture is the next fast-path integration target, alongside NIC replay validation.
 
 ---
 
 ## 2026-06-24 — Deterministic Research Architecture Update
 
-The original single-channel architecture was defined as a fixed-cycle pipeline:
+The original architecture established a fixed-cycle RX normalization, parser, arbitration and TX release datapath, with GTH transceiver latency included in the design budget.
 
-- **3 cycles** for RX normalization
-- **1 cycle** for parser extraction
-- **2 cycles** for arbitration
-- **1 cycle** for TX release
-- plus an explicitly budgeted **PMA latency model** under the GTH Raw Mode / RX-TX Buffer Bypass path
+Post-route SDF timing simulation was used to evaluate the FPGA fabric architecture and its registered boundaries.
 
-This architecture was validated through stricter FPGA-fabric-side post-route SDF timing simulation, while PMA latency was treated as part of the final wire-to-wire budget instead of being hidden inside a vague latency claim.
-
-The old testbench was also replaced with a stricter verification setup. Looking back, the earlier testbench had major limitations, especially in how it modeled physical-layer behavior, packet validity, and RX ownership.
-
-Compared with the beginning of 2026, the architecture changed significantly:
-
-- earlier wording overused “zero jitter”
-- the current proof plan emphasizes BER, Eye Scan, and SFP loopback
-- historical screenshots are now treated as development evidence, not final hardware proof
-- the repository has become a record of the physical-layer learning curve, not only a timing-screenshot showcase
+A revised testbench improved packet-validity handling, RX ownership and physical-layer modeling. The next milestone was real SFP hardware integration.
 
 The ZU15EG board purchase plan moved forward to July, with real SFP hardware validation as the next proof layer.
 
 ---
 
-## Evidence Checklist
+## Development Milestones
 
-Current and upcoming evidence layers:
-
-- [x] RTL architecture iterations
-- [x] functional simulation
-- [x] stress-test dataset flow
-- [x] post-route timing reports on tested fabric-side builds
-- [x] SDF timing simulation flow
-- [x] ZU15EG board acquisition
-- [x] Initial board bring-up direction
-- [ ] stable SFP/GTH link
-- [ ] pattern checker / `pattern_match_sticky`
-- [ ] fixed OMD-C ROM packet validation
-- [ ] fixed-slice OMD-C parser on hardware
-- [ ] Eye Scan
-- [ ] BER measurement
-- [ ] long-duration error-free hardware run
-- [ ] measured Version 2 sub-60 ns latency report
-- [ ] Version 1 RX Buffer Bypass re-validation
-- [ ] dual-path Line A/B arbitration validation
+- [x] RTL architecture and functional simulation
+- [x] 10,000-packet simulation stress test
+- [x] Post-route timing and SDF simulation studies
+- [x] ZU15EG board bring-up and GTH Top architecture
+- [x] Golden GTH IP — RX/TX Dual Buffer Bypass
+- [x] Scrambled RAW32 optical transmission and RX recovery
+- [x] RX alignment and packet framing demonstrated on the laboratory optical stream
+- [x] HKEX OMD-C message-header parser demonstrated in the captured-stream simulation
+- [ ] 10GbE NIC market-data replay
+- [ ] Integrated Line A/B arbitration and recovery
+- [ ] KU040 independent hardware nanosecond timestamping
+- [ ] End-to-end latency measurement including P50, P99 and P99.9
 
 ---
 
@@ -590,59 +488,9 @@ It is now moving onto real hardware.
 
 ---
 
-## 2026-07-07 — Version 2 Architecture Update: RX Buffer ON Delivery Baseline
+## 2026-07-07 — RX Buffer ON Bring-up Baseline
 
-During extended ZU15EG board bring-up and GTH receive-path stress testing, SnowSakura-FPGA exposed a key physical-layer reliability issue: the RX Buffer Bypass path is highly sensitive to clocking, phase alignment, RXUSRCLK2 / RXPROGDIVCLK setup, buffer-bypass status, debug observability, and post-route timing conditions.
-
-In a live market-data path, even a rare dropped packet or unstable receive boundary is unacceptable. A low-latency design must first be correct and stable before latency is removed further.
-
-Based on this result, the current SnowSakura-FPGA architecture is separated into two validation paths.
-
-### 1. Version 2 — RX Buffer ON Stable Delivery Baseline
-
-This path is used for the first ZU15EG hardware baseline.
-
-Goals:
-
-- stable SFP/GTH link
-- clean RX data capture
-- pattern checker / `pattern_match_sticky`
-- fixed OMD-C ROM packet validation
-- fixed-slice OMD-C parser correctness
-- post-synthesis / post-implementation timing reports
-- real bitstream evidence on hardware
-- total measured latency target controlled within **60 ns**
-
-This path prioritizes stable board-level proof and packet correctness before removing every possible GT latency source.
-
-The RX Buffer latency is treated as **configuration-dependent**, not as a marketing constant. The project will report the effective latency through the actual GT Wizard configuration, post-implementation timing, SDF timing simulation, and board-level measurement.
-
-### 2. Version 1 — RX Buffer Bypass Deterministic Low-Latency Target Path
-
-This remains the final ultra-low-latency research path.
-
-Goals:
-
-- RX Buffer Bypass
-- manual alignment
-- clean RXUSRCLK2 / RXPROGDIVCLK clocking
-- buffer bypass done/error validation
-- phase-related timing proof
-- post-route STA and timing simulation
-- final 40ns deterministic latency target
-
-### Design Intent
-
-RX Buffer ON is not a retreat from the low-latency target.
-
-It is the stable hardware baseline selected after ILA probing, Eye Scan direction, and board-level receive-path stress testing made the physical constraint clear: the first deliverable must prove stable packets before the project removes the RX buffer.
-
-The difference is simple:
-
-- **Version 2 proves the product can run cleanly on real hardware.**
-- **Version 1 proves how far the latency blade can be pushed after the hardware path is stable.**
-
-The project direction remains unchanged: GTH physical-layer control, FPGA market-data parsing, HKEX OMD-C fixed-slice parser architecture, timing closure, packet correctness, and hardware evidence.
+The July hardware experiments introduced an RX Buffer ON baseline with TX Buffer Bypass to isolate receive clocking, reset, alignment and link behavior on ZU15EG. The dual-buffer-bypass architecture was retained as the low-latency development direction. Both experiments contributed to the Golden GTH configuration completed in November.
 
 ---
 
@@ -650,9 +498,9 @@ The project direction remains unchanged: GTH physical-layer control, FPGA market
 
 This update restores the README to the dated engineering-log form recorded at **2026-07-07 22:55:54 +08:00**, commit `873df2f0f747b98e43f364358faa6bdc6fd45cbf`. That timestamp remains the historical record of the RX Buffer ON baseline and the preserved Version 1 40ns research blade.
 
-The project is active again. The later RX Buffer ON hardware evidence remains attached only to its measured configuration; it is not relabelled as RX/TX Double-Bypass proof. The current continuation returns to the Version 1 research blade through an independent dual-line A/B arbitration simulation before any live-top modification.
+Development resumed on the low-latency architecture, starting with an independent dual-line A/B arbitration reference simulation.
 
-### Current active work
+### A/B reference architecture
 
 - Message-level Line A/B arbitration keyed by `SeqNum`, never packet-byte equality.
 - One output for A/B duplicates; stale duplicates are explicitly removed.
@@ -663,6 +511,54 @@ The project is active again. The later RX Buffer ON hardware evidence remains at
 The first self-owned Python reference simulation is committed at `a962a69a38468b3421142d4a2d086cd358a63229`, dated **2026-08-14 15:52:23 UTC**. Its positive path, payload-conflict path, and missing-sequence path all pass. The next implementation boundary is the real parser's registered event contract, followed by a bounded two-cycle FDRE/LUT/CARRY8 arbiter and then post-route STA/SDF evidence.
 
 ---
+## 2026-11-26 — Golden GTH IP Frozen: Optical RAW32 on Silicon
+
+On July 14, SnowSakura reached its GTH Top milestone. On November 26, the **Golden GTH IP freeze** completes the reusable transceiver foundation: Vivado 2022.2, GT Wizard 1.7, X0Y6/X0Y7, X0Y7 TX/RX master, 10.3125 Gb/s RAW32, QPLL0 and **TX/RX Buffer Bypass**.
+
+The laboratory optical path sends scrambled data through SFP+, captures the RX stream and reconstructs the OMD-C test packet. The four captures below show the implementation, simulation, RX and TX evidence.
+
+### Physical implementation and RX timing
+
+![ZU15EG physical implementation and RX timing](img/Snipaste_2026-11-26_04-58-17.png)
+
+| Timing metric | Displayed result |
+|---|---:|
+| RX clock group setup slack | +1.223 ns |
+| RX clock group hold slack | +0.012 ns |
+| RX clock group pulse-width slack | +0.564 ns |
+| GTH RX to first capture-register setup slack | +1.316 ns |
+| GTH RX to first capture-register data path delay | 1.708 ns |
+| Reported logic levels on that path | 0 |
+
+The displayed paths belong to the fixed-phase implementation at a displayed 3.1 ns requirement.
+
+### Captured-stream RX-to-parser simulation
+
+![HKEX OMD-C RX-to-parser simulation](img/Snipaste_2026-11-26_05-04-33.png)
+
+The waveform displays a **9.320 ns** cursor interval, with `locked=1`, `marker_error=0`, and a parser-valid event identifying message size `0x0020` and type `0x001E` (Add Order). This is a displayed simulation interval, not the wire-to-wire measurement.
+
+### RX optical hardware ILA
+
+![RX optical hardware ILA](img/Snipaste_2026-11-26_05-45-35.png)
+
+The RX ILA shows changing raw GTH data, normalized output activity and RX probe flags during the optical laboratory capture. The laboratory capture was decoded into the original OMD-C packet.
+
+### TX optical hardware ILA
+
+![TX scrambled RAW32 hardware ILA](img/Snipaste_2026-11-26_05-45-46.png)
+
+The TX ILA shows the changing scrambled RAW32 words presented to the GTH transmit path.
+
+### Next targets
+
+1. Integrate message-level A/B arbitration, deduplication, sequence handling and recovery within the two-cycle allocation.
+2. Add 10GbE NIC market-data replay as a separate validation path.
+3. Build independent KU040 hardware nanosecond timestamping and measure P50, P99 and P99.9 end-to-end latency.
+4. Extend the same engineering foundation to CME, LSE and NASDAQ.
+
+---
+
 ## Public / Private Boundary
 
 Public repository:
@@ -683,7 +579,7 @@ Private lab:
 - phase/alignment calibration scripts
 - proprietary implementation constraints
 
-Do not ask for the private XDC scripts. The public repository is intended to show the engineering direction and evidence chain; the physical implementation strategy remains private.
+The public repository presents architecture, selected timing and hardware results. Implementation RTL and physical optimization techniques remain private.
 
 ---
 
