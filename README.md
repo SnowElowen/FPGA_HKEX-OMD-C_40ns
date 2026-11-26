@@ -2,7 +2,7 @@
 
 ## 43 ns A/B Market-Data Architecture — HKEX OMD-C on ZU15EG
 
-**2026-11-26: Golden GTH IP frozen. Scrambled RAW32 optical RX/TX running on hardware. The next target: bring A/B arbitration into a 43 ns wire-to-wire budget.**
+**2026-11-26: HKEX OMD-C RX/TX and A/B arbitration completed on ZU15EG. Next: NIC replay and independent nanosecond timestamping for P50, P99 and P99.9.**
 
 SnowSakura drives market data through custom FPGA hardware: GTH RAW32, RX normalization, OMD-C parsing, A/B arbitration and TX release. Every cycle is accounted for, from the transceiver to registered logic and physical routing.
 
@@ -14,8 +14,8 @@ SnowSakura drives market data through custom FPGA hardware: GTH RAW32, RX normal
 | Nominal user clock | 322.265625 MHz — 3.103030 ns per cycle |
 | Fabric timing constraint | 322.56 MHz over-constraint |
 | A/B wire-to-wire design target | **approximately 43 ns** |
-| Current milestone | Golden GTH IP freeze and single-path scrambled optical laboratory RX/TX |
-| Next | A/B arbitration, NIC replay and independent hardware latency measurement |
+| Current milestone | Golden GTH IP, optical RX/TX, automatic alignment, OMD-C parser and A/B arbitration completed |
+| Next | NIC replay and independent nanosecond timestamping / latency statistics |
 
 ### The 43 ns Attack Plan
 
@@ -23,12 +23,40 @@ SnowSakura drives market data through custom FPGA hardware: GTH RAW32, RX normal
 |---|---:|
 | GTH PMA/PCS and associated physical-path allowance | ~18 ns |
 | Existing fabric baseline | 6 cycles ≈ 18.62 ns |
-| Planned A/B arbitration | 2 cycles ≈ 6.21 ns |
+| A/B arbitration allocation | 2 cycles ≈ 6.21 ns |
 | **Total design budget** | **≈ 42.82 ns — 43 ns class** |
 
-The six-cycle baseline uses the project's upstream launch-to-TX-release accounting; the extra two cycles are the planned arbitration allocation. The ~18 ns transceiver allowance is a design budget. The 43 ns figure is the integrated architecture target; end-to-end hardware latency and its P99.9 will be measured with the planned independent timestamp system.
+The six-cycle baseline uses the project's upstream launch-to-TX-release accounting; the extra two cycles are the arbitration allocation. The ~18 ns transceiver allowance is a design budget. The 43 ns figure is the integrated architecture target; end-to-end hardware latency and its P99.9 will be measured with the planned independent timestamp system.
 
-The single-path architecture has already been through post-implementation SDF timing simulation. The Golden GTH IP is frozen with dual bypass, and a scrambled RAW32 laboratory packet has been recovered through the optical loopback. The next engineering fight is integrating sequence-aware A/B arbitration without giving away the latency budget.
+The single-path architecture has been through post-implementation SDF timing simulation. The Golden GTH IP is frozen with dual bypass; scrambled RAW32 optical RX/TX, automatic alignment, OMD-C parsing and A/B arbitration have been demonstrated on hardware.
+
+## A/B Arbitration — Hardware Evidence
+
+### Case 1 — Line A Only
+
+![Line A only](img/2026-11-26_ab_case1_line_a_only.png)
+
+**PASS:** Line A advances through arbitration and reaches TX.
+
+### Case 2 — A/B Same-Cycle Duplicate
+
+![A/B same-cycle duplicate](img/2026-11-26_ab_case2_same_cycle_duplicate.png)
+
+**PASS:** Simultaneous A/B duplicates are arbitrated and released once.
+
+### Case 3 — A/B One-Cycle-Late Duplicate
+
+![A/B one-cycle-late duplicate](img/2026-11-26_ab_case3_one_cycle_late_duplicate.png)
+
+**PASS:** The one-cycle-late duplicate is suppressed while the message advances to TX.
+
+### Case 4 — Conflict Detection and Arbitration Stop
+
+![Conflict detection and arbitration stop](img/2026-11-26_ab_case4_conflict_stop.png)
+
+**PASS:** A conflict is detected and arbitration stops.
+
+More hardware and timing results: [Evidence Chain](EVIDENCE_CHAIN.md).
 
 ## Current Architecture
 
@@ -79,7 +107,7 @@ I am open to serious technical discussion, adversarial review, and collaboration
 
 # Engineering Log
 
-The dated entries below record the progression from initial RTL and physical timing research to the completed November optical RX/TX milestone.
+The dated entries below record the progression from initial RTL and physical timing research to the completed November optical RX/TX and A/B arbitration milestones.
 
 ---
 
@@ -398,7 +426,7 @@ This completed the initial simulation milestone and established the foundation f
 
 ---
 
-## Next Frontier — Dual-Path Line A/B Arbitration & Recovery
+## Historical Design Direction — Dual-Path Line A/B Arbitration & Recovery
 
 HKEX OMD-C dual multicast lines introduce a different problem from physical RX alignment. Packet loss, duplicate packets, delayed packets, and gap recovery are network/protocol-layer concerns and must not be confused with Ethernet bit/block/byte alignment.
 
@@ -423,7 +451,7 @@ The intended direction is a **chunked replicated one-hot arbiter**:
 - keep `out_valid` / TX release control separate from payload chunk selection
 - verify that replication survives synthesis and implementation
 
-This arbitration architecture is the next fast-path integration target, alongside NIC replay validation.
+This section records the earlier arbitration design direction; the four current on-board A/B cases are shown above.
 
 ---
 
@@ -447,10 +475,10 @@ The ZU15EG board purchase plan moved forward to July, with real SFP hardware val
 - [x] ZU15EG board bring-up and GTH Top architecture
 - [x] Golden GTH IP — RX/TX Dual Buffer Bypass
 - [x] Scrambled RAW32 optical transmission and RX recovery
-- [x] RX alignment and packet framing demonstrated on the laboratory optical stream
-- [x] HKEX OMD-C message-header parser demonstrated in the captured-stream simulation
+- [x] Automatic RX alignment and packet framing on the optical stream
+- [x] HKEX OMD-C parser and optical RX/TX completed on hardware
+- [x] Line A/B arbitration, duplicate suppression and conflict stop demonstrated on hardware
 - [ ] 10GbE NIC market-data replay
-- [ ] Integrated Line A/B arbitration and recovery
 - [ ] KU040 independent hardware nanosecond timestamping
 - [ ] End-to-end latency measurement including P50, P99 and P99.9
 
@@ -552,10 +580,9 @@ The TX ILA shows the changing scrambled RAW32 words presented to the GTH transmi
 
 ### Next targets
 
-1. Integrate message-level A/B arbitration, deduplication, sequence handling and recovery within the two-cycle allocation.
-2. Add 10GbE NIC market-data replay as a separate validation path.
-3. Build independent KU040 hardware nanosecond timestamping and measure P50, P99 and P99.9 end-to-end latency.
-4. Extend the same engineering foundation to CME, LSE and NASDAQ.
+1. Add 10GbE NIC market-data replay.
+2. Build independent KU040 hardware nanosecond timestamping and measure P50, P99 and P99.9 end-to-end latency.
+3. Extend the same engineering foundation to CME, LSE and NASDAQ.
 
 ---
 
