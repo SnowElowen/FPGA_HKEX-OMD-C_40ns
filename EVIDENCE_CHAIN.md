@@ -1,8 +1,8 @@
 # SnowSakura-FPGA — Hardware and Timing Evidence
 
-## 2026-11-26 — Golden GTH IP Frozen, Optical RAW32 Running
+## 2026-11-26 — HKEX OMD-C RX/TX and A/B Arbitration Completed
 
-SnowSakura's Golden GTH IP is frozen. The ZU15EG laboratory system has transmitted scrambled RAW32 over SFP+ and recovered an HKEX OMD-C laboratory packet on the receive path. The project now moves toward **43 ns A/B architecture**, with sequence-aware arbitration and independent hardware latency measurement as the next targets.
+SnowSakura's Golden GTH IP, scrambled RAW32 optical RX/TX, automatic alignment, framing, parser and A/B arbitration are complete. The next steps are NIC replay and independent nanosecond timestamping for P50, P99 and P99.9 latency statistics.
 
 This index brings the implementation, simulation and hardware captures together, while preserving the earlier RX Buffer ON results as part of the engineering history. See the [project README](README.md) for the architecture and development log.
 
@@ -38,16 +38,42 @@ The Golden GTH XCI and recreation Tcl establish the reusable IP configuration. T
 
 The 9.320 ns cursors identify an interval in the displayed RX/parser simulation. The 18 ns transceiver allowance below and the complete wire-to-wire latency are separate quantities.
 
+## A/B Arbitration — On-Board ILA Evidence
+
+### Case 1 — Line A Only
+
+![Line A only](img/2026-11-26_ab_case1_line_a_only.png)
+
+**PASS:** Line A advances through arbitration and reaches TX.
+
+### Case 2 — A/B Same-Cycle Duplicate
+
+![A/B same-cycle duplicate](img/2026-11-26_ab_case2_same_cycle_duplicate.png)
+
+**PASS:** Simultaneous A/B duplicates are arbitrated and released once.
+
+### Case 3 — A/B One-Cycle-Late Duplicate
+
+![A/B one-cycle-late duplicate](img/2026-11-26_ab_case3_one_cycle_late_duplicate.png)
+
+**PASS:** The one-cycle-late duplicate is suppressed while the message advances to TX.
+
+### Case 4 — Conflict Detection and Arbitration Stop
+
+![Conflict detection and arbitration stop](img/2026-11-26_ab_case4_conflict_stop.png)
+
+**PASS:** A conflict is detected and arbitration stops.
+
 ## 43 ns A/B Latency Budget
 
 | Component | Allocation |
 |---|---:|
 | GTH PMA/PCS and associated physical-path allowance | ≈ 18 ns |
 | Existing fabric baseline, upstream launch → TX release | 6 cycles ≈ 18.62 ns |
-| Planned additional A/B arbitration | 2 cycles ≈ 6.21 ns |
+| A/B arbitration allocation | 2 cycles ≈ 6.21 ns |
 | **Integrated design target** | **≈ 42.82 ns — 43 ns class** |
 
-Cycle values use the nominal 322.265625 MHz clock. The project’s existing six-cycle accounting and the additional two-cycle A/B allowance are the design budget; the transceiver allocation is an estimate. The integrated A/B endpoints and full wire-to-wire measurement will be established in the next implementation and hardware measurement stage.
+Cycle values use the nominal 322.265625 MHz clock. The existing six-cycle accounting and two-cycle A/B allocation form the 43 ns design target. Independent hardware timestamping will measure the end-to-end latency distribution.
 
 ## Development Status
 
@@ -55,14 +81,13 @@ Cycle values use the nominal 322.265625 MHz clock. The project’s existing six-
 - [x] Golden GTH IP freeze with TX/RX Buffer Bypass.
 - [x] Short-window external native PRBS31 board validation in the matching diagnostic build.
 - [x] Scrambled RAW32 optical laboratory transmission and short-window receive capture / decode.
-- [x] RX alignment and framing demonstrated on the laboratory stream.
+- [x] Automatic RX alignment, framing and on-board OMD-C parsing completed.
 - [x] OMD-C Add Order message-header event demonstrated in captured-stream simulation.
 - [x] Post-route timing and post-implementation SDF timing simulation for the documented implementations.
-- [ ] Integrated two-cycle Line A/B arbitration, deduplication, sequence and recovery.
+- [x] Line A/B arbitration, duplicate suppression and conflict stop demonstrated on board.
 - [ ] 10GbE NIC market-data replay.
 - [ ] KU040 independent hardware nanosecond timestamping.
 - [ ] End-to-end latency distribution: P50, P99 and P99.9.
-- [ ] Long-duration BER measurement.
 
 ---
 
@@ -95,9 +120,8 @@ The Heartbeat has no MsgType. Any retained MsgType bus value is invalid when `Ms
 
 ## Next Engineering Targets
 
-The immediate fast-path challenge is message-level Line A/B arbitration: preserve ordering, suppress duplicates, detect gaps and handle conflicts within the two-cycle design allocation. Precomputed eligibility, localized control and routed timing analysis drive the implementation.
+The HKEX OMD-C RX/TX and A/B arbitration milestone is complete, with the four on-board cases recorded above.
 
 NIC replay will exercise market-data ingestion as a separate validation path. The KU040 timestamp system will provide independent nanosecond-scale hardware measurements of the integrated path and its P50, P99 and P99.9 distribution. CME, LSE and NASDAQ laboratory projects will reuse the Golden GTH foundation.
 
-The July observations above belong to their own RX Buffer ON builds; the November captures and dual-bypass diagnostic have their stated build and test scope. Each new result is added with its matching mode and evidence.
 
